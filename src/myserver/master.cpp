@@ -75,7 +75,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
 
   send_client_response(mstate.waiting_client, resp);
 
-  mstate.num_pending_client_requests = 0;
+  mstate.num_pending_client_requests--;
 }
 
 void handle_client_request(Client_handle client_handle, const Request_msg& client_req) {
@@ -95,7 +95,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   // The provided starter code cannot handle multiple pending client
   // requests.  The server returns an error message, and the checker
   // will mark the response as "incorrect"
-  if (mstate.num_pending_client_requests > 0) {
+  if (mstate.num_pending_client_requests > 500) {
     Response_msg resp(0);
     resp.set_response("Oh no! This server cannot handle multiple outstanding requests!");
     send_client_response(client_handle, resp);

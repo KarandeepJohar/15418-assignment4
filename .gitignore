@@ -3,3 +3,5 @@ objs
 cpplint.py
 worker$
 logs_*
+sftp-config.json
+*sublime*

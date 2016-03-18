@@ -8,6 +8,15 @@
 #include "server/messages.h"
 #include "server/worker.h"
 #include "tools/cycle_timer.h"
+#include "tools/work_queue.h"
+#include <pthread.h>
+#ifndef NUMTHREADS
+#define NUM_THREADS     23
+#endif
+WorkQueue <Request_msg> wq;
+
+
+
 
 // Generate a valid 'countprimes' request dictionary from integer 'n'
 static void create_computeprimes_req(Request_msg& req, int n) {
@@ -45,50 +54,69 @@ static void execute_compareprimes(const Request_msg& req, Response_msg& resp) {
       resp.set_response("There are more primes in second range.");
 }
 
+void* handle_requests(void* threadid) {
+  while(1) {
+      Request_msg req= wq.get_work();
+      // Make the tag of the reponse match the tag of the request.  This
+      // is a way for your master to match worker responses to requests.
+      Response_msg resp(req.get_tag());
 
+      // Output debugging help to the logs (in a single worker node
+      // configuration, this would be in the log logs/worker.INFO)
+      DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
+
+      double startTime = CycleTimer::currentSeconds();
+
+      if (req.get_arg("cmd").compare("compareprimes") == 0) {
+
+        // The compareprimes command needs to be special cased since it is
+        // built on four calls to execute_execute work.  All other
+        // requests from the client are one-to-one with calls to
+        // execute_work.
+
+        execute_compareprimes(req, resp);
+
+      } else {
+
+        // actually perform the work.  The response string is filled in by
+        // 'execute_work'
+
+
+        //add work to queue  req
+        execute_work(req, resp);
+
+      }
+
+      double dt = CycleTimer::currentSeconds() - startTime;
+      DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
+
+      // send a response string to the master
+      worker_send_response(resp);
+  }
+  pthread_exit(NULL);
+}
 void worker_node_init(const Request_msg& params) {
 
   // This is your chance to initialize your worker.  For example, you
   // might initialize a few data structures, or maybe even spawn a few
   // pthreads here.  Remember, when running on Amazon servers, worker
   // processes will run on an instance with a dual-core CPU.
+  // WorkQueue<Request_msg> wq = WorkQueue();
+  
+  int i;
+  pthread_t threads[NUM_THREADS];
+  for( i=0; i < NUM_THREADS; i++ ){
+        pthread_create(&threads[i], NULL, handle_requests, NULL);
 
+     }
+  // initialize work queue
+  // launch threads with function to wait for requests
   DLOG(INFO) << "**** Initializing worker: " << params.get_arg("name") << " ****\n";
 
 }
 
 void worker_handle_request(const Request_msg& req) {
+  DLOG(INFO) << "Worker handle_requests: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
 
-  // Make the tag of the reponse match the tag of the request.  This
-  // is a way for your master to match worker responses to requests.
-  Response_msg resp(req.get_tag());
-
-  // Output debugging help to the logs (in a single worker node
-  // configuration, this would be in the log logs/worker.INFO)
-  DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
-
-  double startTime = CycleTimer::currentSeconds();
-
-  if (req.get_arg("cmd").compare("compareprimes") == 0) {
-
-    // The compareprimes command needs to be special cased since it is
-    // built on four calls to execute_execute work.  All other
-    // requests from the client are one-to-one with calls to
-    // execute_work.
-
-    execute_compareprimes(req, resp);
-
-  } else {
-
-    // actually perform the work.  The response string is filled in by
-    // 'execute_work'
-    execute_work(req, resp);
-
-  }
-
-  double dt = CycleTimer::currentSeconds() - startTime;
-  DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
-
-  // send a response string to the master
-  worker_send_response(resp);
+  wq.put_work(req);
 }
