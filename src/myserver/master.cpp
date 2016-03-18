@@ -19,7 +19,7 @@ static struct Master_state {
   int next_tag;
 
   Worker_handle my_worker;
-  Client_handle waiting_client;
+  Client_handle waiting_client[500];
 
 } mstate;
 
@@ -73,7 +73,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
 
   DLOG(INFO) << "Master received a response from a worker: [" << resp.get_tag() << ":" << resp.get_response() << "]" << std::endl;
 
-  send_client_response(mstate.waiting_client, resp);
+  send_client_response(mstate.waiting_client[resp.get_tag()], resp);
 
   mstate.num_pending_client_requests--;
 }
@@ -105,13 +105,14 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   // Save off the handle to the client that is expecting a response.
   // The master needs to do this it can response to this client later
   // when 'handle_worker_response' is called.
-  mstate.waiting_client = client_handle;
+  //mstate.waiting_client[tag] = client_handle;
   mstate.num_pending_client_requests++;
 
   // Fire off the request to the worker.  Eventually the worker will
   // respond, and your 'handle_worker_response' event handler will be
   // called to forward the worker's response back to the server.
   int tag = mstate.next_tag++;
+  mstate.waiting_client[tag] = client_handle;
   Request_msg worker_req(tag, client_req);
   send_request_to_worker(mstate.my_worker, worker_req);
 
