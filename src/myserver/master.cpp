@@ -5,7 +5,7 @@
 #include "server/messages.h"
 #include "server/master.h"
 
-
+#include <map>
 static struct Master_state {
 
   // The mstate struct collects all the master node state into one
@@ -18,13 +18,21 @@ static struct Master_state {
   int num_pending_client_requests;
   int next_tag;
 
-  Worker_handle my_worker[10];
-  Client_handle waiting_client[5000];
+  Worker_handle my_worker[4];
+  std::map<int, Client_handle> waiting_clients;
+  std::map<std::string, Response_msg> cached_responses;
   int num_workers_active;
 
 } mstate;
 
+struct worker_state{
+  
+  bool worker_ready;
+  int num_pending_client_requests;
 
+
+
+};
 
 void master_node_init(int max_workers, int& tick_period) {
 
@@ -53,7 +61,6 @@ void master_node_init(int max_workers, int& tick_period) {
     sprintf (buffer, "name %d", i);
     req.set_arg("name", buffer);
     request_new_worker_node(req);
-
   }
   
 
@@ -83,7 +90,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
 
   DLOG(INFO) << "Master received a response from a worker: [" << resp.get_tag() << ":" << resp.get_response() << "]" << std::endl;
 
-  send_client_response(mstate.waiting_client[resp.get_tag()], resp);
+  send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
 
   mstate.num_pending_client_requests--;
 }
@@ -105,13 +112,13 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   // The provided starter code cannot handle multiple pending client
   // requests.  The server returns an error message, and the checker
   // will mark the response as "incorrect"
-  if (mstate.num_pending_client_requests > 500) {
-    Response_msg resp(0);
-    resp.set_response("Oh no! This server cannot handle multiple outstanding requests!");
-    send_client_response(client_handle, resp);
-    return;
-  }
-
+  // if (mstate.num_pending_client_requests > 5000) {
+  //   Response_msg resp(0);
+  //   resp.set_response("Oh no! This server cannot handle multiple outstanding requests!");
+  //   send_client_response(client_handle, resp);
+  //   return;
+  // }
+  
   // Save off the handle to the client that is expecting a response.
   // The master needs to do this it can response to this client later
   // when 'handle_worker_response' is called.
@@ -122,7 +129,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   // respond, and your 'handle_worker_response' event handler will be
   // called to forward the worker's response back to the server.
   int tag = mstate.next_tag++;
-  mstate.waiting_client[tag] = client_handle;
+  mstate.waiting_clients[tag] = client_handle;
   Request_msg worker_req(tag, client_req);
 
   send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
@@ -138,6 +145,12 @@ void handle_tick() {
   // TODO: you may wish to take action here.  This method is called at
   // fixed time intervals, according to how you set 'tick_period' in
   // 'master_node_init'.
-
+  // for(auto const &ent1 : mstate.) {
+  //   // ent1.first is the first key
+  //   for(auto const &ent2 : ent1.second) {
+  //     // ent2.first is the second key
+  //     // ent2.second is the data
+  //   }
+  // }
 }
 
