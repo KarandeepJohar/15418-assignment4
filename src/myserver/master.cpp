@@ -18,8 +18,9 @@ static struct Master_state {
   int num_pending_client_requests;
   int next_tag;
 
-  Worker_handle my_worker;
-  Client_handle waiting_client[500];
+  Worker_handle my_worker[10];
+  Client_handle waiting_client[5000];
+  int num_workers_active;
 
 } mstate;
 
@@ -34,18 +35,27 @@ void master_node_init(int max_workers, int& tick_period) {
   mstate.next_tag = 0;
   mstate.max_num_workers = max_workers;
   mstate.num_pending_client_requests = 0;
-
+  mstate.num_workers_active =0;
   // don't mark the server as ready until the server is ready to go.
   // This is actually when the first worker is up and running, not
   // when 'master_node_init' returnes
   mstate.server_ready = false;
 
   // fire off a request for a new worker
+  DLOG(INFO) << "Master starting up [" << max_workers << "]" << std::endl;
 
-  int tag = random();
-  Request_msg req(tag);
-  req.set_arg("name", "my worker 0");
-  request_new_worker_node(req);
+  
+  for (int i = 0; i < max_workers; ++i)
+  {
+    int tag = random();
+    Request_msg req(tag);
+    char buffer [50];
+    sprintf (buffer, "name %d", i);
+    req.set_arg("name", buffer);
+    request_new_worker_node(req);
+
+  }
+  
 
 }
 
@@ -55,12 +65,12 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   // corresponds to.  Since the starter code only sends off one new
   // worker request, we don't use it here.
 
-  mstate.my_worker = worker_handle;
+  mstate.my_worker[mstate.num_workers_active++] = worker_handle;
 
   // Now that a worker is booted, let the system know the server is
   // ready to begin handling client requests.  The test harness will
   // now start its timers and start hitting your server with requests.
-  if (mstate.server_ready == false) {
+  if (mstate.num_workers_active==mstate.max_num_workers && mstate.server_ready == false) {
     server_init_complete();
     mstate.server_ready = true;
   }
@@ -114,8 +124,8 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   int tag = mstate.next_tag++;
   mstate.waiting_client[tag] = client_handle;
   Request_msg worker_req(tag, client_req);
-  send_request_to_worker(mstate.my_worker, worker_req);
 
+  send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
   // We're done!  This event handler now returns, and the master
   // process calls another one of your handlers when action is
   // required.
