@@ -21,6 +21,7 @@ static struct Master_state {
   Worker_handle my_worker[4];
   std::map<int, Client_handle> waiting_clients;
   std::map<std::string, Response_msg> cached_responses;
+  std::map<int, Request_msg> cached_requests;
   int num_workers_active;
 
 } mstate;
@@ -91,13 +92,16 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
   DLOG(INFO) << "Master received a response from a worker: [" << resp.get_tag() << ":" << resp.get_response() << "]" << std::endl;
 
   send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
-
+  mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
   mstate.num_pending_client_requests--;
 }
 
 void handle_client_request(Client_handle client_handle, const Request_msg& client_req) {
 
   DLOG(INFO) << "Received request: " << client_req.get_request_string() << std::endl;
+
+
+
 
   // You can assume that traces end with this special message.  It
   // exists because it might be useful for debugging to dump
@@ -118,25 +122,35 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   //   send_client_response(client_handle, resp);
   //   return;
   // }
-  
+
   // Save off the handle to the client that is expecting a response.
   // The master needs to do this it can response to this client later
   // when 'handle_worker_response' is called.
   //mstate.waiting_client[tag] = client_handle;
-  mstate.num_pending_client_requests++;
+  
 
   // Fire off the request to the worker.  Eventually the worker will
   // respond, and your 'handle_worker_response' event handler will be
   // called to forward the worker's response back to the server.
   int tag = mstate.next_tag++;
-  mstate.waiting_clients[tag] = client_handle;
-  Request_msg worker_req(tag, client_req);
 
-  send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
-  // We're done!  This event handler now returns, and the master
-  // process calls another one of your handlers when action is
-  // required.
+  if (mstate.cached_responses.count(client_req.get_request_string()))
+  {
+    Response_msg resp(0);
+    resp.set_response(mstate.cached_responses[client_req.get_request_string()].get_response());
+    send_client_response(client_handle, resp);
 
+  } else {
+    mstate.num_pending_client_requests++;
+    mstate.waiting_clients[tag] = client_handle;
+    mstate.cached_requests[tag] = client_req;
+    Request_msg worker_req(tag, client_req);
+
+    send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
+    // We're done!  This event handler now returns, and the master
+    // process calls another one of your handlers when action is
+    // required.
+  }
 }
 
 
