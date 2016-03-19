@@ -7,7 +7,7 @@
 
 #include <map>
 #include <list>
-
+#include <queue>
 
 #ifndef NUM_THREADS
 #define NUM_THREADS    23
@@ -17,11 +17,8 @@
 #define MAX_REQUESTS 30
 #endif
 struct worker_state{
-  
   bool worker_ready;
   int requests_processing;
-
-
 
 };
 
@@ -44,13 +41,44 @@ static struct Master_state {
   std::map<std::string, Response_msg> cached_responses;
   std::map<int, Request_msg> cached_requests;
   std::map<Worker_handle, worker_state> worker_states;
+  std::queue<Request_msg> ReqQueue;
   int num_workers_active;
   int idle_threads;
 
 } mstate;
 
-Worker_handle* get_best_worker_handle(int tag, std::string client_req){
-  return &mstate.my_worker[tag%mstate.num_workers_active];
+Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
+    int min = NUM_THREADS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
+    int worker = 0;
+    //Assign work to worker with assignments below NUM_THREADS
+    for (int i = 1; i < mstate.num_workers_active; i++) {
+        int this_min = NUM_THREADS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
+        if (min > this_min) {
+            min = this_min;
+            worker = i;
+        }
+    }
+    //Assign work to worker with assignments below MAX_THREADS
+    if (min ==0) {
+        min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
+        worker = 0;
+
+        for (int i = 1; i < mstate.num_workers_active; i++) {
+            int this_min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
+            if (min > this_min) {
+                min = this_min;
+                worker = i;
+            }
+        }
+    }
+    //Assign to queue
+    if (min == 0) {
+        DLOG(INFO) << "Adding requests to queue";
+        mstate.ReqQueue.push(worker_req);
+        //Round Robin
+        //worker = tag % mstate.num_workers_active;
+    }
+  return &mstate.my_worker[worker];
 }
 
 void master_node_init(int max_workers, int& tick_period) {
@@ -112,6 +140,12 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
   send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
   mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
   mstate.num_pending_client_requests--;
+  if (mstate.ReqQueue.size()) {
+      Request_msg worker_req = mstate.ReqQueue.front();
+      Worker_handle* best_worker_handle = get_best_worker_handle(worker_req.get_tag(), worker_req);
+      send_request_to_worker(*best_worker_handle, worker_req);
+      mstate.ReqQueue.pop();
+    }
 }
 
 void handle_client_request(Client_handle client_handle, const Request_msg& client_req) {
@@ -163,7 +197,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.waiting_clients[tag] = client_handle;
     mstate.cached_requests[tag] = client_req;
     Request_msg worker_req(tag, client_req);
-    Worker_handle* best_worker_handle = get_best_worker_handle(tag, client_req.get_request_string());
+    Worker_handle* best_worker_handle = get_best_worker_handle(tag, worker_req);
     if (best_worker_handle!=NULL)
     {
       mstate.worker_states[*best_worker_handle].requests_processing++;
