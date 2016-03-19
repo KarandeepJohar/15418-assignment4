@@ -11,7 +11,7 @@
 #include "tools/work_queue.h"
 #include <pthread.h>
 #ifndef NUMTHREADS
-#define NUM_THREADS     100
+#define NUM_THREADS     60
 #endif
 WorkQueue <Request_msg> wq;
 

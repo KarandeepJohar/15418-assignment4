@@ -6,6 +6,25 @@
 #include "server/master.h"
 
 #include <map>
+#include <list>
+
+
+#ifndef NUM_THREADS
+#define NUM_THREADS    23
+#endif
+
+#ifndef MAX_REQUESTS
+#define MAX_REQUESTS 30
+#endif
+struct worker_state{
+  
+  bool worker_ready;
+  int requests_processing;
+
+
+
+};
+
 static struct Master_state {
 
   // The mstate struct collects all the master node state into one
@@ -19,21 +38,20 @@ static struct Master_state {
   int next_tag;
 
   Worker_handle my_worker[4];
+  // std::map<int, Worker_handle> my_workers;
+  std::list<Worker_handle> my_workers;
   std::map<int, Client_handle> waiting_clients;
   std::map<std::string, Response_msg> cached_responses;
   std::map<int, Request_msg> cached_requests;
+  std::map<Worker_handle, worker_state> worker_states;
   int num_workers_active;
+  int idle_threads;
 
 } mstate;
 
-struct worker_state{
-  
-  bool worker_ready;
-  int num_pending_client_requests;
-
-
-
-};
+Worker_handle* get_best_worker_handle(int tag, std::string client_req){
+  return &mstate.my_worker[tag%mstate.num_workers_active];
+}
 
 void master_node_init(int max_workers, int& tick_period) {
 
@@ -72,9 +90,8 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   // 'tag' allows you to identify which worker request this response
   // corresponds to.  Since the starter code only sends off one new
   // worker request, we don't use it here.
-
   mstate.my_worker[mstate.num_workers_active++] = worker_handle;
-
+  mstate.idle_threads+=NUM_THREADS;
   // Now that a worker is booted, let the system know the server is
   // ready to begin handling client requests.  The test harness will
   // now start its timers and start hitting your server with requests.
@@ -82,6 +99,7 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
     server_init_complete();
     mstate.server_ready = true;
   }
+
 }
 
 void handle_worker_response(Worker_handle worker_handle, const Response_msg& resp) {
@@ -90,7 +108,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
   // Here we directly return this response to the client.
 
   DLOG(INFO) << "Master received a response from a worker: [" << resp.get_tag() << ":" << resp.get_response() << "]" << std::endl;
-
+  mstate.worker_states[worker_handle].requests_processing--;
   send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
   mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
   mstate.num_pending_client_requests--;
@@ -145,8 +163,17 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.waiting_clients[tag] = client_handle;
     mstate.cached_requests[tag] = client_req;
     Request_msg worker_req(tag, client_req);
+    Worker_handle* best_worker_handle = get_best_worker_handle(tag, client_req.get_request_string());
+    if (best_worker_handle!=NULL)
+    {
+      mstate.worker_states[*best_worker_handle].requests_processing++;
+      mstate.idle_threads--;
+      DLOG(INFO) << "Routed request: " << client_req.get_request_string() << std::endl;
+      send_request_to_worker(*best_worker_handle, worker_req);
+      // send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
 
-    send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
+    }
+    
     // We're done!  This event handler now returns, and the master
     // process calls another one of your handlers when action is
     // required.
