@@ -47,38 +47,46 @@ static struct Master_state {
 
 } mstate;
 
-Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
+Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip_queue=false){
     int min = NUM_THREADS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
     int worker = 0;
     //Assign work to worker with assignments below NUM_THREADS
     for (int i = 1; i < mstate.num_workers_active; i++) {
         int this_min = NUM_THREADS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
-        if (min > this_min) {
-            min = this_min;
-            worker = i;
-        }
-    }
-    //Assign work to worker with assignments below MAX_THREADS
-    if (min ==0) {
-        min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
-        worker = 0;
-
-        for (int i = 1; i < mstate.num_workers_active; i++) {
-            int this_min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
-            if (min > this_min) {
+        DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
+        if (min > this_min || min <= 0) {
+            if (this_min > 0) {
                 min = this_min;
                 worker = i;
             }
         }
     }
+    //Assign work to worker with assignments below MAX_THREADS
+    if (min <=0) {
+        min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
+        worker = 0;
+
+        for (int i = 1; i < mstate.num_workers_active; i++) {
+            int this_min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
+            DLOG(INFO) << "Sched2 Status" << i << "\t"<< this_min << "\t"<< min;
+            if (min > this_min || min <=0) {
+                if (this_min > 0) {
+                    min = this_min;
+                    worker = i;
+                }
+            }
+        }
+    }
     //Assign to queue
-    if (min == 0) {
+    if (min <= 0 && !skip_queue) {
         DLOG(INFO) << "Adding requests to queue";
         mstate.ReqQueue.push(worker_req);
+        return NULL;
         //Round Robin
         //worker = tag % mstate.num_workers_active;
     }
-  return &mstate.my_worker[worker];
+    DLOG(INFO) << "Sending request to " << worker;
+    return &mstate.my_worker[worker];
 }
 
 void master_node_init(int max_workers, int& tick_period) {
@@ -141,8 +149,9 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
   mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
   mstate.num_pending_client_requests--;
   if (mstate.ReqQueue.size()) {
+      DLOG(INFO) << "Popping requests from queue";
       Request_msg worker_req = mstate.ReqQueue.front();
-      Worker_handle* best_worker_handle = get_best_worker_handle(worker_req.get_tag(), worker_req);
+      Worker_handle* best_worker_handle = get_best_worker_handle(worker_req.get_tag(), worker_req, true);
       send_request_to_worker(*best_worker_handle, worker_req);
       mstate.ReqQueue.pop();
     }
