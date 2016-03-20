@@ -56,6 +56,7 @@ static struct Master_state {
   std::queue<Request_msg> ReqQueue;
   int num_workers_active;
   int idle_threads;
+  int num_pending_workers;
 
 } mstate;
 
@@ -112,6 +113,15 @@ std::pair<int, int> get_min(int max_allowed, bool projectidea=false, bool minimi
   
   return std::make_pair(min,worker);
 }
+// mstate.worker_states[mstate.my_worker[index]].requests_processing==0 before calling this
+void kill_worker_node_wrapper(int index) {
+  mstate.worker_states.erase(mstate.my_worker[index]);
+  mstate.num_workers_active--;
+  mstate.idle_threads-=NUM_THREADS;
+  kill_worker_node( mstate.my_worker[index]);
+}
+
+
 
 Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
     if (worker_req.get_arg("cmd") == "tellmenow")
@@ -208,6 +218,7 @@ void master_node_init(int max_workers, int& tick_period) {
   // This is actually when the first worker is up and running, not
   // when 'master_node_init' returnes
   mstate.server_ready = false;
+  mstate.num_pending_workers = 0;
 
   // fire off a request for a new worker
   DLOG(INFO) << "Master starting up [" << max_workers << "]" << std::endl;
@@ -218,6 +229,7 @@ void master_node_init(int max_workers, int& tick_period) {
     int tag = random();
     Request_msg req(tag);
     char buffer [50];
+    mstate.num_pending_workers++;
     sprintf (buffer, "name %d", i);
     req.set_arg("name", buffer);
     request_new_worker_node(req);
@@ -231,8 +243,16 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   // 'tag' allows you to identify which worker request this response
   // corresponds to.  Since the starter code only sends off one new
   // worker request, we don't use it here.
-  mstate.my_worker[mstate.num_workers_active++] = worker_handle;
+  mstate.num_pending_workers--;
+  int worker_num=mstate.num_workers_active++;
+  mstate.my_worker[worker_num] = worker_handle;
+  worker_state ws = mstate.worker_states[worker_handle];
+  ws.project_idea_requests_processing=0;
+  ws.requests_processing=0;
+  ws.worker_ready=true;
   mstate.idle_threads+=NUM_THREADS;
+
+
   // Now that a worker is booted, let the system know the server is
   // ready to begin handling client requests.  The test harness will
   // now start its timers and start hitting your server with requests.
