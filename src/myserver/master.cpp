@@ -119,9 +119,23 @@ void kill_worker_node_wrapper(int index) {
   mstate.num_workers_active--;
   mstate.idle_threads-=NUM_THREADS;
   kill_worker_node( mstate.my_worker[index]);
+  for (int i = index; i < mstate.num_workers_active; ++i)
+  {
+    mstate.my_worker[i]=mstate.my_worker[i+1];
+  }
+
+  
 }
 
-
+void request_new_worker_node_wrapper(int i){
+  int tag = random();
+  Request_msg req(tag);
+  char buffer [50];
+  mstate.num_pending_workers++;
+  sprintf (buffer, "name %d", i);
+  req.set_arg("name", buffer);
+  request_new_worker_node(req);
+}
 
 Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
     if (worker_req.get_arg("cmd") == "tellmenow")
@@ -226,13 +240,7 @@ void master_node_init(int max_workers, int& tick_period) {
   
   for (int i = 0; i < max_workers; ++i)
   {
-    int tag = random();
-    Request_msg req(tag);
-    char buffer [50];
-    mstate.num_pending_workers++;
-    sprintf (buffer, "name %d", i);
-    req.set_arg("name", buffer);
-    request_new_worker_node(req);
+    request_new_worker_node_wrapper(i);
   }
   
 
