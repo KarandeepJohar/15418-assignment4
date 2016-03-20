@@ -254,10 +254,11 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   mstate.num_pending_workers--;
   int worker_num=mstate.num_workers_active++;
   mstate.my_worker[worker_num] = worker_handle;
-  worker_state ws = mstate.worker_states[worker_handle];
+  worker_state ws;
   ws.project_idea_requests_processing=0;
   ws.requests_processing=0;
   ws.worker_ready=true;
+  mstate.worker_states[worker_handle]=ws;
   mstate.idle_threads+=NUM_THREADS;
 
 
