@@ -11,10 +11,11 @@
 #include "tools/work_queue.h"
 #include <pthread.h>
 #ifndef NUMTHREADS
-#define NUM_THREADS     60
+#define NUM_THREADS     23
 #endif
 WorkQueue <Request_msg> wq;
-
+WorkQueue <Request_msg> tellmenow_q;
+WorkQueue <Request_msg> projectidea_q;
 
 
 
@@ -34,12 +35,76 @@ void* handle_requests(void* threadid) {
 
       
 
-        // actually perform the work.  The response string is filled in by
-        // 'execute_work'
+      // actually perform the work.  The response string is filled in by
+      // 'execute_work'
 
 
-        //add work to queue  req
-        execute_work(req, resp);
+      //add work to queue  req
+      execute_work(req, resp);
+
+      
+
+      double dt = CycleTimer::currentSeconds() - startTime;
+      DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
+
+      // send a response string to the master
+      worker_send_response(resp);
+  }
+  pthread_exit(NULL);
+}
+void* handle_tellmenow_requests(void* threadid) {
+  while(1) {
+      Request_msg req= tellmenow_q.get_work();
+      // Make the tag of the reponse match the tag of the request.  This
+      // is a way for your master to match worker responses to requests.
+      Response_msg resp(req.get_tag());
+
+      // Output debugging help to the logs (in a single worker node
+      // configuration, this would be in the log logs/worker.INFO)
+      DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
+
+      double startTime = CycleTimer::currentSeconds();
+
+      
+
+      // actually perform the work.  The response string is filled in by
+      // 'execute_work'
+
+
+      //add work to queue  req
+      execute_work(req, resp);
+
+      
+
+      double dt = CycleTimer::currentSeconds() - startTime;
+      DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
+
+      // send a response string to the master
+      worker_send_response(resp);
+  }
+  pthread_exit(NULL);
+}
+void* handle_projectidea_requests(void* threadid) {
+  while(1) {
+      Request_msg req= projectidea_q.get_work();
+      // Make the tag of the reponse match the tag of the request.  This
+      // is a way for your master to match worker responses to requests.
+      Response_msg resp(req.get_tag());
+
+      // Output debugging help to the logs (in a single worker node
+      // configuration, this would be in the log logs/worker.INFO)
+      DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
+
+      double startTime = CycleTimer::currentSeconds();
+
+      
+
+      // actually perform the work.  The response string is filled in by
+      // 'execute_work'
+
+
+      //add work to queue  req
+      execute_work(req, resp);
 
       
 
@@ -65,6 +130,10 @@ void worker_node_init(const Request_msg& params) {
         pthread_create(&threads[i], NULL, handle_requests, NULL);
 
      }
+  pthread_t t1,t2;
+  pthread_create(&t1, NULL, handle_tellmenow_requests, NULL);
+  pthread_create(&t2, NULL, handle_projectidea_requests, NULL);
+
   // initialize work queue
   // launch threads with function to wait for requests
   DLOG(INFO) << "**** Initializing worker: " << params.get_arg("name") << " ****\n";
@@ -73,6 +142,12 @@ void worker_node_init(const Request_msg& params) {
 
 void worker_handle_request(const Request_msg& req) {
   DLOG(INFO) << "Worker handle_requests: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
-
-  wq.put_work(req);
+  if (req.get_arg("cmd")=="tellmenow")
+  {
+    tellmenow_q.put_work(req);
+  }else if (req.get_arg("cmd")=="projectidea"){
+    projectidea_q.put_work(req);
+  }else{
+    wq.put_work(req);
+  }
 }

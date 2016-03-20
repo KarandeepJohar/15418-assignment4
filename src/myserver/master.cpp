@@ -19,7 +19,7 @@
 struct worker_state{
   bool worker_ready;
   int requests_processing;
-
+  int project_idea_requests_processing;
 };
 
 static struct Master_state {
@@ -40,12 +40,19 @@ static struct Master_state {
   std::map<int, int> compareprimes_origtag_numresposnses;
   std::map<int, int> compareprimes_newtag_responses;
 
+  //primarily for count primes requests
+  std::map<std::string, Response_msg> cached_responses;
+  std::map<int, Request_msg> cached_requests;
+
+
 
   std::list<Worker_handle> my_workers;
   std::map<int, Client_handle> waiting_clients;
-  std::map<std::string, Response_msg> cached_responses;
-  std::map<int, Request_msg> cached_requests;
+  
   std::map<Worker_handle, worker_state> worker_states;
+  //separate Q for projectideas
+  std::queue<Request_msg> projectIdeaReqQueue;
+  //Q for all other requests
   std::queue<Request_msg> ReqQueue;
   int num_workers_active;
   int idle_threads;
@@ -60,12 +67,42 @@ static void create_computeprimes_req(Request_msg& req, int n) {
   req.set_arg("cmd", "countprimes");
   req.set_arg("n", oss.str());
 }
-Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip_queue=false){
-    int min = NUM_THREADS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
-    int worker = 0;
+
+
+int get_num(int max_allowed,int i, bool projectidea, bool minimize){
+  int num;
+  if (projectidea)
+  {
+     num =mstate.worker_states[mstate.my_worker[i]].project_idea_requests_processing;
+  }
+  else{
+     num =mstate.worker_states[mstate.my_worker[i]].requests_processing;
+  }
+  if (minimize) {
+    
+    return max_allowed-num;
+  
+  } else {
+    if (num>=max_allowed)
+    {
+      return 0;
+    } else {
+      return num;
+    }
+  }
+  
+
+}
+// returns the worker with least number of idle threads
+std::pair<int, int> get_min(int max_allowed, bool projectidea=false, bool minimize =false){
+  int min,worker;
+  if (projectidea)
+  {
+     min = max_allowed - mstate.worker_states[mstate.my_worker[0]].project_idea_requests_processing;
+     worker = 0;
     //Assign work to worker with assignments below NUM_THREADS
     for (int i = 1; i < mstate.num_workers_active; i++) {
-        int this_min = NUM_THREADS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
+        int this_min = max_allowed - mstate.worker_states[mstate.my_worker[i]].project_idea_requests_processing;
         DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
         if (min > this_min || min <= 0) {
             if (this_min > 0) {
@@ -74,30 +111,61 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip
             }
         }
     }
-    //Assign work to worker with assignments below MAX_THREADS
-    if (min <=0) {
-        min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
-        worker = 0;
-
-        for (int i = 1; i < mstate.num_workers_active; i++) {
-            int this_min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
-            DLOG(INFO) << "Sched2 Status" << i << "\t"<< this_min << "\t"<< min;
-            if (min > this_min || min <=0) {
-                if (this_min > 0) {
-                    min = this_min;
-                    worker = i;
-                }
+    
+  }else{
+    min = max_allowed - mstate.worker_states[mstate.my_worker[0]].requests_processing;
+    worker = 0;
+    //Assign work to worker with assignments below NUM_THREADS
+    for (int i = 1; i < mstate.num_workers_active; i++) {
+        int this_min = max_allowed - mstate.worker_states[mstate.my_worker[i]].requests_processing;
+        DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
+        if (min > this_min || min <= 0) {
+            if (this_min > 0) {
+                min = this_min;
+                worker = i;
             }
         }
     }
-    //Assign to queue
-    if (min <= 0 && !skip_queue) {
-        DLOG(INFO) << "Adding requests to queue";
-        mstate.ReqQueue.push(worker_req);
-        return NULL;
-        //Round Robin
-        //worker = tag % mstate.num_workers_active;
+  }
+  return std::make_pair(min,worker);
+}
+
+Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip_queue=false){
+    if (worker_req.get_arg("cmd") == "tellmenow")
+    {
+      return &mstate.my_worker[0];
     }
+    int min,worker;
+    if (worker_req.get_arg("cmd") == "projectidea")
+    {
+      std::pair<int, int> answer= get_min(1,true);
+      min = answer.first;
+      worker = answer.second;
+      if (min <= 0 && !skip_queue) {
+          DLOG(INFO) << "Adding project idea request to queue";
+          mstate.projectIdeaReqQueue.push(worker_req);
+          return NULL;
+      }
+    } else{
+      std::pair<int, int> answer= get_min(NUM_THREADS,false);
+      min = answer.first;
+      worker = answer.second;
+      
+      //Assign work to worker with assignments below MAX_THREADS
+      //TODO change this to worker with least busy worker
+      if (min <=0) {
+          std::pair<int, int> answer= get_min(MAX_REQUESTS,false);
+          min = answer.first;
+          worker = answer.second;
+      }
+      if (min <= 0 && !skip_queue) {
+          DLOG(INFO) << "Adding requests to queue";
+          mstate.ReqQueue.push(worker_req);
+          return NULL;
+      }
+    }
+    //Assign to queue
+    
     DLOG(INFO) << "Sending request to " << worker;
     return &mstate.my_worker[worker];
 }
@@ -107,7 +175,12 @@ void assign_request(int tag, Request_msg worker_req) {
   Worker_handle* best_worker_handle = get_best_worker_handle(tag, worker_req);
   if (best_worker_handle!=NULL)
   {
+    if (worker_req.get_arg("cmd")=="projectidea")
+    {
+      mstate.worker_states[*best_worker_handle].project_idea_requests_processing++;
+    }
     mstate.worker_states[*best_worker_handle].requests_processing++;
+    
     mstate.idle_threads--;
     DLOG(INFO) << "Routed request: " << worker_req.get_request_string() << std::endl;
     send_request_to_worker(*best_worker_handle, worker_req);
@@ -192,8 +265,13 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
   // Here we directly return this response to the client.
 
   DLOG(INFO) << "Master received a response from a worker: [" << resp.get_tag() << ":" << resp.get_response() << "]" << std::endl;
+  if (mstate.cached_requests.count(resp.get_tag()) && mstate.cached_requests[resp.get_tag()].get_arg("cmd")=="projectidea")
+  {
+    mstate.worker_states[worker_handle].project_idea_requests_processing--;
+  }
   mstate.worker_states[worker_handle].requests_processing--;
   mstate.num_pending_client_requests--;
+  mstate.idle_threads++;
   if (mstate.compareprimes_newtag_origtag.count(resp.get_tag()))
   {
     int origtag = mstate.compareprimes_newtag_origtag[resp.get_tag()];
@@ -221,12 +299,21 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
     mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
   }
-  if (mstate.ReqQueue.size()) {
+
+
+  if (mstate.projectIdeaReqQueue.size() && mstate.cached_requests.count(resp.get_tag()) && mstate.cached_requests[resp.get_tag()].get_arg("cmd")=="projectidea")
+  {
+      DLOG(INFO) << "Popping requests from project ideas queue";
+      Request_msg worker_req = mstate.projectIdeaReqQueue.front();
+      assign_request(worker_req.get_tag(), worker_req);
+      mstate.projectIdeaReqQueue.pop();
+  }
+  else if (mstate.ReqQueue.size()) {
       DLOG(INFO) << "Popping requests from queue";
       Request_msg worker_req = mstate.ReqQueue.front();
       assign_request(worker_req.get_tag(), worker_req);
       mstate.ReqQueue.pop();
-    }
+  }
 
 }
 
