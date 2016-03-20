@@ -9,8 +9,12 @@
 #include <list>
 #include <queue>
 
+#ifndef NUM_INITIAL_WORKERS
+#define NUM_INITIAL_WORKERS  1
+#endif
+
 #ifndef NUM_THREADS
-#define NUM_THREADS    23
+#define NUM_THREADS  23
 #endif
 
 #ifndef MAX_REQUESTS
@@ -101,7 +105,7 @@ std::pair<int, int> get_min(int max_allowed, bool projectidea=false, bool minimi
    worker = 0;
   for (int i = 1; i < mstate.num_workers_active; i++) {
       int this_min = get_num( max_allowed,  i,  projectidea,  minimize);
-      DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
+      DLOG(INFO) << "Sched Status " << i << "\t"<< this_min << "\t"<< min;
       if (min > this_min || min <= 0) {
           if (this_min > 0) {
               min = this_min;
@@ -134,6 +138,7 @@ void request_new_worker_node_wrapper(int i){
   mstate.num_pending_workers++;
   sprintf (buffer, "name %d", i);
   req.set_arg("name", buffer);
+  DLOG(INFO) << "Calling dummyy add";
   request_new_worker_node(req);
 }
 
@@ -149,6 +154,11 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
       min = answer.first;
       worker = answer.second;
       if (min <= 0) {
+          if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers ==0)) {
+              DLOG(INFO) << "Adding NEW WORKER for PROJECT_IDEA tag: " << tag;
+              mstate.num_pending_workers++;
+              request_new_worker_node_wrapper(0);
+          }
           DLOG(INFO) << "Adding project idea request to queue";
           mstate.projectIdeaReqQueue.push(worker_req);
           return NULL;
@@ -160,7 +170,13 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
       
       //Assign work to worker with assignments below MAX_THREADS
       //changed this to worker with least busy worker
+      DLOG(INFO) << "MIN WORK " << min;
       if (min <=0) {
+          if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
+              DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
+              mstate.num_pending_workers++;
+              request_new_worker_node_wrapper(0);
+          }
           std::pair<int, int> answer= get_min(MAX_REQUESTS,false,false);
           min = answer.first;
           worker = answer.second;
@@ -222,7 +238,7 @@ void master_node_init(int max_workers, int& tick_period) {
 
   // set up tick handler to fire every 5 seconds. (feel free to
   // configure as you please)
-  tick_period = 5;
+  tick_period = 1;
 
   mstate.next_tag = 0;
   mstate.max_num_workers = max_workers;
@@ -232,18 +248,17 @@ void master_node_init(int max_workers, int& tick_period) {
   // This is actually when the first worker is up and running, not
   // when 'master_node_init' returnes
   mstate.server_ready = false;
-  mstate.num_pending_workers = 0;
 
   // fire off a request for a new worker
-  DLOG(INFO) << "Master starting up [" << max_workers << "]" << std::endl;
-
-  
-  for (int i = 0; i < max_workers; ++i)
-  {
-    request_new_worker_node_wrapper(i);
+  DLOG(INFO) << "Master starting up [" << max_workers << "]";
+  mstate.num_pending_workers = 0;
+  for (int i =0; i < NUM_INITIAL_WORKERS; i++) {
+      request_new_worker_node_wrapper(i);
   }
-  
-
+  //int tag = random();
+  //Request_msg req(tag);
+  //req.set_arg("name", "my worker 0");
+  //request_new_worker_node(req);
 }
 
 void handle_new_worker_online(Worker_handle worker_handle, int tag) {
@@ -251,6 +266,7 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   // 'tag' allows you to identify which worker request this response
   // corresponds to.  Since the starter code only sends off one new
   // worker request, we don't use it here.
+  DLOG(INFO) << "Handling new worker "; 
   mstate.num_pending_workers--;
   int worker_num=mstate.num_workers_active++;
   mstate.my_worker[worker_num] = worker_handle;
@@ -265,11 +281,27 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
   // Now that a worker is booted, let the system know the server is
   // ready to begin handling client requests.  The test harness will
   // now start its timers and start hitting your server with requests.
-  if (mstate.num_workers_active==mstate.max_num_workers && mstate.server_ready == false) {
+  //if (mstate.num_workers_active==mstate.max_num_workers && mstate.server_ready == false) {
+  DLOG(INFO) << "Active Workers " << mstate.num_workers_active; 
+  if (mstate.num_workers_active > 0 && mstate.server_ready == false) {
+    DLOG(INFO) << "Starting Server"; 
     server_init_complete();
     mstate.server_ready = true;
   }
-
+  if (mstate.projectIdeaReqQueue.size()) {
+      DLOG(INFO) << "Popping requests from project ideas queue for new worker";
+      Request_msg worker_req = mstate.projectIdeaReqQueue.front();
+      assign_request(worker_req.get_tag(), worker_req);
+      mstate.projectIdeaReqQueue.pop();
+  }
+  int count = 0;
+  while (mstate.ReqQueue.size() && count < NUM_THREADS) {
+      DLOG(INFO) << "Popping requests from queue for new worker";
+      Request_msg worker_req = mstate.ReqQueue.front();
+      assign_request(worker_req.get_tag(), worker_req);
+      mstate.ReqQueue.pop();
+      count++;
+  }
 }
 
 void handle_worker_response(Worker_handle worker_handle, const Response_msg& resp) {
@@ -430,5 +462,14 @@ void handle_tick() {
   //     // ent2.second is the data
   //   }
   // }
-}
+  DLOG(INFO) << "TICK ";
+  for (int index = 0; index < mstate.num_workers_active; index++) {
+      if (mstate.worker_states[mstate.my_worker[index]].requests_processing==0 && mstate.num_workers_active>1) {
+          DLOG(INFO) << "KILLING WORKER " << index;
+          kill_worker_node_wrapper(index);
+          //Only kill one worker as index might be corrupted
+          break;
+      }
+  }
 
+}
