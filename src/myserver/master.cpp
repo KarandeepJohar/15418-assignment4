@@ -94,43 +94,26 @@ int get_num(int max_allowed,int i, bool projectidea, bool minimize){
 
 }
 // returns the worker with least number of idle threads
-std::pair<int, int> get_min(int max_allowed, bool projectidea=false, bool minimize =false){
+std::pair<int, int> get_min(int max_allowed, bool projectidea=false, bool minimize =true){
   int min,worker;
-  if (projectidea)
-  {
-     min = max_allowed - mstate.worker_states[mstate.my_worker[0]].project_idea_requests_processing;
-     worker = 0;
-    //Assign work to worker with assignments below NUM_THREADS
-    for (int i = 1; i < mstate.num_workers_active; i++) {
-        int this_min = max_allowed - mstate.worker_states[mstate.my_worker[i]].project_idea_requests_processing;
-        DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
-        if (min > this_min || min <= 0) {
-            if (this_min > 0) {
-                min = this_min;
-                worker = i;
-            }
-        }
-    }
-    
-  }else{
-    min = max_allowed - mstate.worker_states[mstate.my_worker[0]].requests_processing;
-    worker = 0;
-    //Assign work to worker with assignments below NUM_THREADS
-    for (int i = 1; i < mstate.num_workers_active; i++) {
-        int this_min = max_allowed - mstate.worker_states[mstate.my_worker[i]].requests_processing;
-        DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
-        if (min > this_min || min <= 0) {
-            if (this_min > 0) {
-                min = this_min;
-                worker = i;
-            }
-        }
-    }
+   min = get_num( max_allowed,  0,  projectidea,  minimize);
+   worker = 0;
+  for (int i = 1; i < mstate.num_workers_active; i++) {
+      int this_min = get_num( max_allowed,  i,  projectidea,  minimize);
+      DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
+      if (min > this_min || min <= 0) {
+          if (this_min > 0) {
+              min = this_min;
+              worker = i;
+          }
+      }
   }
+  
+  
   return std::make_pair(min,worker);
 }
 
-Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip_queue=false){
+Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
     if (worker_req.get_arg("cmd") == "tellmenow")
     {
       return &mstate.my_worker[0];
@@ -141,7 +124,7 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip
       std::pair<int, int> answer= get_min(1,true);
       min = answer.first;
       worker = answer.second;
-      if (min <= 0 && !skip_queue) {
+      if (min <= 0) {
           DLOG(INFO) << "Adding project idea request to queue";
           mstate.projectIdeaReqQueue.push(worker_req);
           return NULL;
@@ -152,13 +135,13 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip
       worker = answer.second;
       
       //Assign work to worker with assignments below MAX_THREADS
-      //TODO change this to worker with least busy worker
+      //changed this to worker with least busy worker
       if (min <=0) {
-          std::pair<int, int> answer= get_min(MAX_REQUESTS,false);
+          std::pair<int, int> answer= get_min(MAX_REQUESTS,false,false);
           min = answer.first;
           worker = answer.second;
       }
-      if (min <= 0 && !skip_queue) {
+      if (min <= 0) {
           DLOG(INFO) << "Adding requests to queue";
           mstate.ReqQueue.push(worker_req);
           return NULL;
@@ -172,6 +155,8 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip
 
 
 void assign_request(int tag, Request_msg worker_req) {
+  mstate.num_pending_client_requests++;
+  //get best_worker_handle returns NULL if none possible
   Worker_handle* best_worker_handle = get_best_worker_handle(tag, worker_req);
   if (best_worker_handle!=NULL)
   {
@@ -184,7 +169,6 @@ void assign_request(int tag, Request_msg worker_req) {
     mstate.idle_threads--;
     DLOG(INFO) << "Routed request: " << worker_req.get_request_string() << std::endl;
     send_request_to_worker(*best_worker_handle, worker_req);
-    // send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
 
   }
 
@@ -345,6 +329,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     params[2] = atoi(client_req.get_arg("n3").c_str());
     params[3] = atoi(client_req.get_arg("n4").c_str());
     Response_msg resp(0);
+    //naive cases
     if (params[0]<=params[2]&& params[1]>= params[3]){
       resp.set_response("There are more primes in first range.");
       send_client_response(client_handle, resp);
@@ -394,7 +379,6 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   } else {
     int tag = mstate.next_tag++;
     mstate.waiting_clients[tag] = client_handle;
-    mstate.num_pending_client_requests++;
     mstate.cached_requests[tag] = client_req;
     Request_msg worker_req(tag, client_req);
     assign_request(tag,worker_req);
