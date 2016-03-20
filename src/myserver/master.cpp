@@ -7,7 +7,7 @@
 
 #include <map>
 #include <list>
-
+#include <queue>
 
 #ifndef NUM_THREADS
 #define NUM_THREADS    23
@@ -17,11 +17,8 @@
 #define MAX_REQUESTS 30
 #endif
 struct worker_state{
-  
   bool worker_ready;
   int requests_processing;
-
-
 
 };
 
@@ -49,10 +46,12 @@ static struct Master_state {
   std::map<std::string, Response_msg> cached_responses;
   std::map<int, Request_msg> cached_requests;
   std::map<Worker_handle, worker_state> worker_states;
+  std::queue<Request_msg> ReqQueue;
   int num_workers_active;
   int idle_threads;
 
 } mstate;
+
 
 // Generate a valid 'countprimes' request dictionary from integer 'n'
 static void create_computeprimes_req(Request_msg& req, int n) {
@@ -61,26 +60,68 @@ static void create_computeprimes_req(Request_msg& req, int n) {
   req.set_arg("cmd", "countprimes");
   req.set_arg("n", oss.str());
 }
-Worker_handle* get_best_worker_handle(int tag, std::string client_req){
+Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req, bool skip_queue=false){
+    int min = NUM_THREADS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
+    int worker = 0;
+    //Assign work to worker with assignments below NUM_THREADS
+    for (int i = 1; i < mstate.num_workers_active; i++) {
+        int this_min = NUM_THREADS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
+        DLOG(INFO) << "Sched Status" << i << "\t"<< this_min << "\t"<< min;
+        if (min > this_min || min <= 0) {
+            if (this_min > 0) {
+                min = this_min;
+                worker = i;
+            }
+        }
+    }
+    //Assign work to worker with assignments below MAX_THREADS
+    if (min <=0) {
+        min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[0]].requests_processing;
+        worker = 0;
 
-  return &mstate.my_worker[tag%mstate.num_workers_active];
+        for (int i = 1; i < mstate.num_workers_active; i++) {
+            int this_min = MAX_REQUESTS - mstate.worker_states[mstate.my_worker[i]].requests_processing;
+            DLOG(INFO) << "Sched2 Status" << i << "\t"<< this_min << "\t"<< min;
+            if (min > this_min || min <=0) {
+                if (this_min > 0) {
+                    min = this_min;
+                    worker = i;
+                }
+            }
+        }
+    }
+    //Assign to queue
+    if (min <= 0 && !skip_queue) {
+        DLOG(INFO) << "Adding requests to queue";
+        mstate.ReqQueue.push(worker_req);
+        return NULL;
+        //Round Robin
+        //worker = tag % mstate.num_workers_active;
+    }
+    DLOG(INFO) << "Sending request to " << worker;
+    return &mstate.my_worker[worker];
+}
+
+
+void assign_request(int tag, Request_msg worker_req) {
+  Worker_handle* best_worker_handle = get_best_worker_handle(tag, worker_req);
+  if (best_worker_handle!=NULL)
+  {
+    mstate.worker_states[*best_worker_handle].requests_processing++;
+    mstate.idle_threads--;
+    DLOG(INFO) << "Routed request: " << worker_req.get_request_string() << std::endl;
+    send_request_to_worker(*best_worker_handle, worker_req);
+    // send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
+
+  }
+
 }
 // Implements logic required by compareprimes command via multiple
 // calls to execute_work.  This function fills in the appropriate
 // response.
-static void execute_compareprimes(const Request_msg& req) {
+static void execute_compareprimes(const Request_msg& req, int params[4]) {
 
-    int params[4];
-    // Response_msg resp(0);
-    // grab the four arguments defining the two ranges
-    params[0] = atoi(req.get_arg("n1").c_str());
-    params[1] = atoi(req.get_arg("n2").c_str());
-    params[2] = atoi(req.get_arg("n3").c_str());
-    params[3] = atoi(req.get_arg("n4").c_str());
-    // if (params[0]<=params[2]&& params[1]>= params[3])
-    //   resp.set_response("There are more primes in first range.");
-    // else if(params[2]<=params[0]&& params[3]>= params[1])
-    //   resp.set_response("There are more primes in second range.");
+
     // else{
       int origtag = mstate.next_tag;
       mstate.compareprimes_origtag_numresposnses[origtag] =  0;
@@ -88,33 +129,10 @@ static void execute_compareprimes(const Request_msg& req) {
       for (int i=0; i<4; i++) {
         int tag_req = origtag+i+1;
         Request_msg dummy_req(tag_req);
-        
         create_computeprimes_req(dummy_req, params[i]);
-        // if (mstate.cached_responses.count(dummy_req.get_request_string()))
-        // {
-        //   dummy_resp.set_response(mstate.cached_responses[dummy_req.get_request_string()].get_response());
-        //   counts[i] = atoi(dummy_resp.get_response().c_str());
-        // }else{
-          
-          mstate.compareprimes_newtag_origtag[tag_req] = origtag;
-          Worker_handle* best_worker_handle = get_best_worker_handle(tag_req, dummy_req.get_request_string());
-          if (best_worker_handle!=NULL)
-          {
-            mstate.worker_states[*best_worker_handle].requests_processing++;
-            mstate.idle_threads--;
-            DLOG(INFO) << "Master routed request: [" << origtag << ":" <<dummy_req.get_tag() << ":" <<dummy_req.get_request_string()<< "]" << std::endl;
-            DLOG(INFO) << "Routed request: " << dummy_req.get_request_string() << std::endl;
-            send_request_to_worker(*best_worker_handle, dummy_req);
-            // send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
-
-          }
-
-        // }
-
+        mstate.compareprimes_newtag_origtag[tag_req] = origtag;
+        assign_request(tag_req,dummy_req);
       }
-
-      
-    // }
 }
 
 
@@ -199,12 +217,17 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
         new_resp.set_response("There are more primes in second range.");
       send_client_response(mstate.waiting_clients[origtag], new_resp);
     }
-
-    return;
+  } else{
+    send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
+    mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
   }
-  send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
-  mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
-  
+  if (mstate.ReqQueue.size()) {
+      DLOG(INFO) << "Popping requests from queue";
+      Request_msg worker_req = mstate.ReqQueue.front();
+      assign_request(worker_req.get_tag(), worker_req);
+      mstate.ReqQueue.pop();
+    }
+
 }
 
 void handle_client_request(Client_handle client_handle, const Request_msg& client_req) {
@@ -212,18 +235,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
   DLOG(INFO) << "Received request: " << client_req.get_request_string() << std::endl;
 
 
-  
-  
-  if (client_req.get_arg("cmd") == "compareprimes")
-  {
-    mstate.waiting_clients[mstate.next_tag] = client_handle;
-    
-    execute_compareprimes(client_req);
-    mstate.next_tag+=5;
 
-    return;
-  }
-  
   // You can assume that traces end with this special message.  It
   // exists because it might be useful for debugging to dump
   // information about the entire run here: statistics, etc.
@@ -233,6 +245,37 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
     return;
   }
+  
+  
+  if (client_req.get_arg("cmd") == "compareprimes")
+  {
+    
+    int params[4];
+    // Response_msg resp(0);
+    // grab the four arguments defining the two ranges
+    params[0] = atoi(client_req.get_arg("n1").c_str());
+    params[1] = atoi(client_req.get_arg("n2").c_str());
+    params[2] = atoi(client_req.get_arg("n3").c_str());
+    params[3] = atoi(client_req.get_arg("n4").c_str());
+    Response_msg resp(0);
+    if (params[0]<=params[2]&& params[1]>= params[3]){
+      resp.set_response("There are more primes in first range.");
+      send_client_response(client_handle, resp);
+      return;
+    } else if(params[2]<=params[0]&& params[3]>= params[1]){
+      resp.set_response("There are more primes in second range.");
+      send_client_response(client_handle, resp);
+      return;
+    } else{
+      mstate.waiting_clients[mstate.next_tag] = client_handle;
+      execute_compareprimes(client_req, params);
+      mstate.next_tag+=5;
+
+      return;
+    }
+  }
+  
+
 
   // The provided starter code cannot handle multiple pending client
   // requests.  The server returns an error message, and the checker
@@ -267,17 +310,7 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     mstate.num_pending_client_requests++;
     mstate.cached_requests[tag] = client_req;
     Request_msg worker_req(tag, client_req);
-    Worker_handle* best_worker_handle = get_best_worker_handle(tag, client_req.get_request_string());
-    if (best_worker_handle!=NULL)
-    {
-      mstate.worker_states[*best_worker_handle].requests_processing++;
-      mstate.idle_threads--;
-      DLOG(INFO) << "Routed request: " << client_req.get_request_string() << std::endl;
-      send_request_to_worker(*best_worker_handle, worker_req);
-      // send_request_to_worker(mstate.my_worker[tag%mstate.max_num_workers], worker_req);
-
-    }
-    
+    assign_request(tag,worker_req);
     // We're done!  This event handler now returns, and the master
     // process calls another one of your handlers when action is
     // required.
