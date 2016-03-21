@@ -18,7 +18,7 @@
 #endif
 
 #ifndef MAX_REQUESTS
-#define MAX_REQUESTS 30
+#define MAX_REQUESTS 25
 #endif
 struct worker_state{
   bool worker_ready;
@@ -156,8 +156,7 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
       if (min <= 0) {
           if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers ==0)) {
               DLOG(INFO) << "Adding NEW WORKER for PROJECT_IDEA tag: " << tag;
-              mstate.num_pending_workers++;
-              request_new_worker_node_wrapper(0);
+              request_new_worker_node_wrapper(mstate.num_workers_active);
           }
           DLOG(INFO) << "Adding project idea request to queue";
           mstate.projectIdeaReqQueue.push(worker_req);
@@ -174,8 +173,7 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
       if (min <=0) {
           if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
               DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
-              mstate.num_pending_workers++;
-              request_new_worker_node_wrapper(0);
+              request_new_worker_node_wrapper(mstate.num_workers_active);
           }
           std::pair<int, int> answer= get_min(MAX_REQUESTS,false,false);
           min = answer.first;
@@ -294,13 +292,19 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
       assign_request(worker_req.get_tag(), worker_req);
       mstate.projectIdeaReqQueue.pop();
   }
-  int count = 0;
-  while (mstate.ReqQueue.size() && count < NUM_THREADS) {
+  int count = mstate.projectIdeaReqQueue.size();
+  while (count--) {
+      DLOG(INFO) << "Popping projectidea requests from queue for new worker";
+      Request_msg worker_req = mstate.projectIdeaReqQueue.front();
+      assign_request(worker_req.get_tag(), worker_req);
+      mstate.ReqQueue.pop();
+  }
+  count = mstate.ReqQueue.size();
+  while (count--) {
       DLOG(INFO) << "Popping requests from queue for new worker";
       Request_msg worker_req = mstate.ReqQueue.front();
       assign_request(worker_req.get_tag(), worker_req);
       mstate.ReqQueue.pop();
-      count++;
   }
 }
 

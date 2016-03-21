@@ -1,0 +1,115 @@
+grading_compareprimes.txt
+
+Avg request latency:  1111.10 ms
+Total test time:      18.23 sec
+Workers booted:       1
+Compute used:         18.71 sec
+
+----------------------------------------------------------------
+Grade: 12 of 12 points
+         + 2 points for correctness
+         + 10 points for perf
+         - 0 points for worker usage
+
+         97.1% requests met the 2000 ms latency requirement
+----------------------------------------------------------------
+
+grading_nonuniform1.txt
+Avg request latency:  1669.09 ms
+Total test time:      121.41 sec
+Workers booted:       9
+Compute used:         253.76 sec
+
+----------------------------------------------------------------
+Grade: 12 of 12 points
+         + 2 points for correctness
+         + 10 points for perf
+         - 0 points for worker usage
+
+         99.8% requests met the 2500 ms latency requirement
+----------------------------------------------------------------
+
+grading_nonuniform2.txt
+Avg request latency:  1843.34 ms
+Total test time:      48.06 sec
+Workers booted:       12
+Compute used:         146.22 sec
+
+----------------------------------------------------------------
+Grade: 11 of 12 points
+         + 2 points for correctness
+         + 9 points for perf
+         - 0 points for worker usage
+
+         87.5% of project idea requests met the 4100 ms latency requirement
+         90.4% of all other requests met the 2500 ms latency requirement
+----------------------------------------------------------------
+
+
+grading_nonuniform3.txt
+
+Avg request latency:  1157.55 ms
+Total test time:      123.22 sec
+Workers booted:       23
+Compute used:         335.14 sec
+
+----------------------------------------------------------------
+Grade: 12 of 12 points
+         + 2 points for correctness
+         + 10 points for perf
+         - 0 points for worker usage
+
+         76.1% of project idea requests met the 4100 ms latency requirement
+         98.8% of tellmenow requests met the 150 ms latency requirement
+         98.1% of all other requests met the 2500 ms latency requirement
+----------------------------------------------------------------
+
+grading_tellmenow.txt
+
+Avg request latency:  1107.81 ms
+Total test time:      26.83 sec
+Workers booted:       10
+Compute used:         31.24 sec
+
+----------------------------------------------------------------
+Grade: 12 of 12 points
+         + 2 points for correctness
+         + 10 points for perf
+         - 0 points for worker usage
+
+         100.0% of tellmenow requests met the 150 ms latency requirement
+         99.6% of all other requests met the 2500 ms latency requirement
+----------------------------------------------------------------
+
+grading_uniform.txt
+Avg request latency:  939.28 ms
+Total test time:      42.20 sec
+Workers booted:       2
+Compute used:         45.42 sec
+
+----------------------------------------------------------------
+Grade: 5 of 6 points
+         + 2 points for correctness
+         + 3 points for perf
+         - 0 points for worker usage
+
+         87.2% requests met the 2000 ms latency requirement
+----------------------------------------------------------------
+
+
+
+grading_wisdom.txt
+
+Avg request latency:  1731.48 ms
+Total test time:      31.14 sec
+Workers booted:       3
+Compute used:         57.46 sec
+
+----------------------------------------------------------------
+Grade: 9 of 12 points
+         + 2 points for correctness
+         + 10 points for perf
+         - 3 points for worker usage
+
+         98.6% requests met the 2500 ms latency requirement
+----------------------------------------------------------------
