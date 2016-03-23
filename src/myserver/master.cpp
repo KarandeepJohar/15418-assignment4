@@ -351,7 +351,18 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     }
   } else{
     send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
-    mstate.cached_responses[mstate.cached_requests[resp.get_tag()].get_request_string()] =resp;
+    std::string req_str = mstate.cached_requests[resp.get_tag()].get_request_string();
+    mstate.cached_responses[req_str] =resp;
+    
+    if (mstate.cached_requests_str.count(req_str) && mstate.cached_requests_str[req_str].size())
+    {
+
+      while(mstate.cached_requests_str[req_str].size()) {
+          int tag_req = mstate.cached_requests_str[req_str].front();
+          send_client_response(mstate.waiting_clients[tag_req], resp);
+          mstate.cached_requests_str[req_str].pop();
+      }
+    }
   }
 
 
@@ -454,13 +465,15 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     int tag = mstate.next_tag++;
     mstate.waiting_clients[tag] = client_handle;
     mstate.cached_requests[tag] = client_req;
-    // if (mstate.cached_responses_processing
-    // {
-    //   /* code */
-    // }
-    Request_msg worker_req(tag, client_req);
-    assign_request(tag,worker_req);
-    // We're done!  This event handler now returns, and the master
+    if (mstate.cached_responses_processing.count(client_req.get_request_string()))
+    {
+      mstate.cached_requests_str[client_req.get_request_string()].push(tag);
+    }
+    else{
+      mstate.cached_responses_processing[client_req.get_request_string()]=true;
+      Request_msg worker_req(tag, client_req);
+      assign_request(tag,worker_req);
+    }// We're done!  This event handler now returns, and the master
     // process calls another one of your handlers when action is
     // required.
   }
