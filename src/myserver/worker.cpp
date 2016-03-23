@@ -11,16 +11,32 @@
 #include "tools/work_queue.h"
 #include <pthread.h>
 #ifndef NUMTHREADS
-#define NUM_THREADS     23
+#define NUM_THREADS     46
 #endif
 WorkQueue <Request_msg> wq;
 WorkQueue <Request_msg> tellmenow_q;
 WorkQueue <Request_msg> projectidea_q;
 
+int stick_this_thread_to_core(int start_core_id=1, int end_core_id=sysconf(_SC_NPROCESSORS_ONLN)) {
+   int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+   if (start_core_id < 0 || start_core_id >= num_cores || end_core_id < 0 || end_core_id >= num_cores)
+      return EINVAL;
 
+   cpu_set_t cpuset;
+   CPU_ZERO(&cpuset);
+   for (int i = start_core_id; i < end_core_id; ++i)
+   {
+     CPU_SET(i, &cpuset);
+   }
+   
+
+   pthread_t current_thread = pthread_self();    
+   return pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+}
 
 
 void* handle_requests(void* threadid) {
+  stick_this_thread_to_core();
   while(1) {
       Request_msg req= wq.get_work();
       // Make the tag of the reponse match the tag of the request.  This
@@ -53,6 +69,7 @@ void* handle_requests(void* threadid) {
   pthread_exit(NULL);
 }
 void* handle_tellmenow_requests(void* threadid) {
+  stick_this_thread_to_core();
   while(1) {
       Request_msg req= tellmenow_q.get_work();
       // Make the tag of the reponse match the tag of the request.  This
@@ -85,6 +102,8 @@ void* handle_tellmenow_requests(void* threadid) {
   pthread_exit(NULL);
 }
 void* handle_projectidea_requests(void* threadid) {
+
+  stick_this_thread_to_core(0,1);
   while(1) {
       Request_msg req= projectidea_q.get_work();
       // Make the tag of the reponse match the tag of the request.  This

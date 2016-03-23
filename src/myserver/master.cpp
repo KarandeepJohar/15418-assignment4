@@ -18,7 +18,7 @@
 #endif
 
 #ifndef MAX_REQUESTS
-#define MAX_REQUESTS 25
+#define MAX_REQUESTS 46
 #endif
 struct worker_state{
   bool worker_ready;
@@ -171,15 +171,15 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
       //changed this to worker with least busy worker
       DLOG(INFO) << "MIN WORK " << min;
       if (min <=0) {
-          if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
-              DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
-              request_new_worker_node_wrapper(mstate.num_workers_active);
-          }
           std::pair<int, int> answer= get_min(MAX_REQUESTS,false,false);
           min = answer.first;
           worker = answer.second;
       }
       if (min <= 0) {
+          if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
+              DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
+              request_new_worker_node_wrapper(mstate.num_workers_active);
+          }
           DLOG(INFO) << "Adding requests to queue";
           mstate.ReqQueue.push(worker_req);
           return NULL;
@@ -297,7 +297,7 @@ void handle_new_worker_online(Worker_handle worker_handle, int tag) {
       DLOG(INFO) << "Popping projectidea requests from queue for new worker";
       Request_msg worker_req = mstate.projectIdeaReqQueue.front();
       assign_request(worker_req.get_tag(), worker_req);
-      mstate.ReqQueue.pop();
+      mstate.projectIdeaReqQueue.pop();
   }
   count = mstate.ReqQueue.size();
   while (count--) {
