@@ -14,11 +14,11 @@
 #endif
 
 #ifndef NUM_THREADS
-#define NUM_THREADS  33
+#define NUM_THREADS  28
 #endif
 
 #ifndef MAX_REQUESTS
-#define MAX_REQUESTS 50
+#define MAX_REQUESTS 37
 #endif
 struct worker_state{
   bool worker_ready;
@@ -48,8 +48,8 @@ static struct Master_state {
   std::unordered_map<std::string, Response_msg> cached_responses;
   std::unordered_map<int, Request_msg> cached_requests;
 
-
-
+  std::unordered_map<std::string, std::queue<int>> cached_requests_str;
+  std::unordered_map<std::string, bool> cached_responses_processing;
   std::list<Worker_handle> my_workers;
   std::unordered_map<int, Client_handle> waiting_clients;
   
@@ -171,14 +171,18 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
       //changed this to worker with least busy worker
       DLOG(INFO) << "MIN WORK " << min;
       if (min <=0) {
-          if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
-              DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
-              request_new_worker_node_wrapper(mstate.num_workers_active);
-          }
           std::pair<int, int> answer= get_min(MAX_REQUESTS,false,false);
           min = answer.first;
           worker = answer.second;
+          if (min<=2)
+          {
+            if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
+                  DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
+                  request_new_worker_node_wrapper(mstate.num_workers_active);
+              }
+          }
       }
+
       if (min <= 0) {
           
           DLOG(INFO) << "Adding requests to queue";
@@ -443,9 +447,17 @@ void handle_client_request(Client_handle client_handle, const Request_msg& clien
     send_client_response(client_handle, resp);
 
   } else {
+    // if (mstate.cached_requests)
+    // {
+    //   /* code */
+    // }
     int tag = mstate.next_tag++;
     mstate.waiting_clients[tag] = client_handle;
     mstate.cached_requests[tag] = client_req;
+    // if (mstate.cached_responses_processing
+    // {
+    //   /* code */
+    // }
     Request_msg worker_req(tag, client_req);
     assign_request(tag,worker_req);
     // We're done!  This event handler now returns, and the master

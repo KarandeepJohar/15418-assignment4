@@ -11,7 +11,7 @@
 #include "tools/work_queue.h"
 #include <pthread.h>
 #ifndef NUMTHREADS
-#define NUM_THREADS     37
+#define NUM_THREADS     35
 #endif
 WorkQueue <Request_msg> wq;
 WorkQueue <Request_msg> tellmenow_q;
@@ -19,6 +19,7 @@ WorkQueue <Request_msg> projectidea_q;
 
 int stick_this_thread_to_core(int start_core_id=1, int end_core_id=sysconf(_SC_NPROCESSORS_ONLN)) {
    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+   DLOG(INFO) << "num_cores: [" << num_cores << "]\n";
    if (start_core_id < 0 || start_core_id >= num_cores || end_core_id < 0 || end_core_id >= num_cores)
       return EINVAL;
 
