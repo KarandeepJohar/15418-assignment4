@@ -4,7 +4,7 @@
 
 #include "server/messages.h"
 #include "server/master.h"
-
+#include <unordered_map>
 #include <map>
 #include <list>
 #include <queue>
@@ -14,11 +14,11 @@
 #endif
 
 #ifndef NUM_THREADS
-#define NUM_THREADS  23
+#define NUM_THREADS  33
 #endif
 
 #ifndef MAX_REQUESTS
-#define MAX_REQUESTS 46
+#define MAX_REQUESTS 50
 #endif
 struct worker_state{
   bool worker_ready;
@@ -40,20 +40,20 @@ static struct Master_state {
 
   Worker_handle my_worker[4];
   // std::map<int, Worker_handle> my_workers;
-  std::map<int, int> compareprimes_newtag_origtag;
-  std::map<int, int> compareprimes_origtag_numresposnses;
-  std::map<int, int> compareprimes_newtag_responses;
+  std::unordered_map<int, int> compareprimes_newtag_origtag;
+  std::unordered_map<int, int> compareprimes_origtag_numresposnses;
+  std::unordered_map<int, int> compareprimes_newtag_responses;
 
   //primarily for count primes requests
-  std::map<std::string, Response_msg> cached_responses;
-  std::map<int, Request_msg> cached_requests;
+  std::unordered_map<std::string, Response_msg> cached_responses;
+  std::unordered_map<int, Request_msg> cached_requests;
 
 
 
   std::list<Worker_handle> my_workers;
-  std::map<int, Client_handle> waiting_clients;
+  std::unordered_map<int, Client_handle> waiting_clients;
   
-  std::map<Worker_handle, worker_state> worker_states;
+  std::unordered_map<Worker_handle, worker_state> worker_states;
   //separate Q for projectideas
   std::queue<Request_msg> projectIdeaReqQueue;
   //Q for all other requests
@@ -171,15 +171,16 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
       //changed this to worker with least busy worker
       DLOG(INFO) << "MIN WORK " << min;
       if (min <=0) {
+          if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
+              DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
+              request_new_worker_node_wrapper(mstate.num_workers_active);
+          }
           std::pair<int, int> answer= get_min(MAX_REQUESTS,false,false);
           min = answer.first;
           worker = answer.second;
       }
       if (min <= 0) {
-          if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
-              DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
-              request_new_worker_node_wrapper(mstate.num_workers_active);
-          }
+          
           DLOG(INFO) << "Adding requests to queue";
           mstate.ReqQueue.push(worker_req);
           return NULL;
