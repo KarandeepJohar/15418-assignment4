@@ -105,6 +105,35 @@ void* handle_tellmenow_requests(void* threadid) {
 void* handle_projectidea_requests(void* threadid) {
 
   stick_this_thread_to_core(0,1);
+  while(!projectidea_q.started) {
+      Request_msg req= wq.get_work();
+      // Make the tag of the reponse match the tag of the request.  This
+      // is a way for your master to match worker responses to requests.
+      Response_msg resp(req.get_tag());
+
+      // Output debugging help to the logs (in a single worker node
+      // configuration, this would be in the log logs/worker.INFO)
+      DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
+
+      double startTime = CycleTimer::currentSeconds();
+
+      
+
+      // actually perform the work.  The response string is filled in by
+      // 'execute_work'
+
+
+      //add work to queue  req
+      execute_work(req, resp);
+
+      
+
+      double dt = CycleTimer::currentSeconds() - startTime;
+      DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
+
+      // send a response string to the master
+      worker_send_response(resp);
+  }
   while(1) {
       Request_msg req= projectidea_q.get_work();
       // Make the tag of the reponse match the tag of the request.  This

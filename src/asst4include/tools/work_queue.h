@@ -15,10 +15,11 @@ private:
   pthread_cond_t queue_cond;
 
 public:
-
+  bool started;
   WorkQueue() {
     pthread_cond_init(&queue_cond, NULL);
     pthread_mutex_init(&queue_lock, NULL);
+    started = false;
   }
 
   T get_work() {
@@ -37,6 +38,7 @@ public:
 
   void put_work(const T& item) {
     pthread_mutex_lock(&queue_lock);
+    started = true;
     storage.push_back(item);
     pthread_mutex_unlock(&queue_lock);
     pthread_cond_signal(&queue_cond);
