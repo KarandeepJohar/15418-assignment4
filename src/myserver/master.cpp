@@ -14,11 +14,11 @@
 #endif
 
 #ifndef NUM_THREADS
-#define NUM_THREADS  28
+#define NUM_THREADS  24
 #endif
 
 #ifndef MAX_REQUESTS
-#define MAX_REQUESTS 37
+#define MAX_REQUESTS 36
 #endif
 struct worker_state{
   bool worker_ready;
@@ -174,7 +174,7 @@ Worker_handle* get_best_worker_handle(int tag, Request_msg worker_req){
           std::pair<int, int> answer= get_min(MAX_REQUESTS,false,false);
           min = answer.first;
           worker = answer.second;
-          if (min<=2)
+          if (min<=3)
           {
             if ((mstate.num_workers_active < mstate.max_num_workers) && (mstate.num_pending_workers == 0)) {
                   DLOG(INFO) << "Adding NEW WORKER for tag: " << tag;
@@ -353,7 +353,7 @@ void handle_worker_response(Worker_handle worker_handle, const Response_msg& res
     send_client_response(mstate.waiting_clients[resp.get_tag()], resp);
     std::string req_str = mstate.cached_requests[resp.get_tag()].get_request_string();
     mstate.cached_responses[req_str] =resp;
-    
+
     if (mstate.cached_requests_str.count(req_str) && mstate.cached_requests_str[req_str].size())
     {
 
