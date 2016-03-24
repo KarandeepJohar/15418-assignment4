@@ -9,13 +9,15 @@
 #include "server/worker.h"
 #include "tools/cycle_timer.h"
 #include "tools/work_queue.h"
+#include "work_q.h"
 #include <pthread.h>
 #ifndef NUMTHREADS
 #define NUM_THREADS     33
 #endif
 WorkQueue <Request_msg> wq;
 WorkQueue <Request_msg> tellmenow_q;
-WorkQueue <Request_msg> projectidea_q;
+WorkQueueProjIdea <Request_msg> projectidea_q;
+static bool repeat = true;
 
 int stick_this_thread_to_core(int start_core_id=1, int end_core_id=sysconf(_SC_NPROCESSORS_ONLN)) {
    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
@@ -42,30 +44,23 @@ void* handle_requests(void* threadid) {
       Request_msg req= wq.get_work();
       // Make the tag of the reponse match the tag of the request.  This
       // is a way for your master to match worker responses to requests.
-      Response_msg resp(req.get_tag());
+      if (req.get_tag() > -1) {
+          Response_msg resp(req.get_tag());
 
-      // Output debugging help to the logs (in a single worker node
-      // configuration, this would be in the log logs/worker.INFO)
-      DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
+          // Output debugging help to the logs (in a single worker node
+          // configuration, this would be in the log logs/worker.INFO)
+          DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
 
-      double startTime = CycleTimer::currentSeconds();
+          double startTime = CycleTimer::currentSeconds();
+          //add work to queue  req
+          execute_work(req, resp);
 
-      
+          double dt = CycleTimer::currentSeconds() - startTime;
+          DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
 
-      // actually perform the work.  The response string is filled in by
-      // 'execute_work'
-
-
-      //add work to queue  req
-      execute_work(req, resp);
-
-      
-
-      double dt = CycleTimer::currentSeconds() - startTime;
-      DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
-
-      // send a response string to the master
-      worker_send_response(resp);
+          // send a response string to the master
+          worker_send_response(resp);
+      }
   }
   pthread_exit(NULL);
 }
@@ -83,16 +78,8 @@ void* handle_tellmenow_requests(void* threadid) {
 
       double startTime = CycleTimer::currentSeconds();
 
-      
-
-      // actually perform the work.  The response string is filled in by
-      // 'execute_work'
-
-
       //add work to queue  req
       execute_work(req, resp);
-
-      
 
       double dt = CycleTimer::currentSeconds() - startTime;
       DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
@@ -109,30 +96,26 @@ void* handle_projectidea_requests(void* threadid) {
       Request_msg req= wq.get_work();
       // Make the tag of the reponse match the tag of the request.  This
       // is a way for your master to match worker responses to requests.
-      Response_msg resp(req.get_tag());
+      if (req.get_tag() > -1) {
+          Response_msg resp(req.get_tag());
 
-      // Output debugging help to the logs (in a single worker node
-      // configuration, this would be in the log logs/worker.INFO)
-      DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
+          // Output debugging help to the logs (in a single worker node
+          // configuration, this would be in the log logs/worker.INFO)
+          DLOG(INFO) << "Worker got request: [" << req.get_tag() << ":" << req.get_request_string() << "]\n";
 
-      double startTime = CycleTimer::currentSeconds();
+          double startTime = CycleTimer::currentSeconds();
 
-      
+          //add work to queue  req
+          execute_work(req, resp);
 
-      // actually perform the work.  The response string is filled in by
-      // 'execute_work'
+          double dt = CycleTimer::currentSeconds() - startTime;
+          DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
 
-
-      //add work to queue  req
-      execute_work(req, resp);
-
-      
-
-      double dt = CycleTimer::currentSeconds() - startTime;
-      DLOG(INFO) << "Worker completed work in " << (1000.f * dt) << " ms (" << req.get_tag()  << ")\n";
-
-      // send a response string to the master
-      worker_send_response(resp);
+          // send a response string to the master
+          worker_send_response(resp);
+      } else {
+          break;
+      }
   }
   while(1) {
       Request_msg req= projectidea_q.get_work();
@@ -196,6 +179,17 @@ void worker_handle_request(const Request_msg& req) {
     tellmenow_q.put_work(req);
   }else if (req.get_arg("cmd")=="projectidea"){
     projectidea_q.put_work(req);
+    //Ensure project idea starts
+    while (repeat && projectidea_q.size()) {
+        int tag = -1;
+        Request_msg dummy_req(tag);
+        char buffer [50];
+        sprintf (buffer, "dummy %d", -1);
+        dummy_req.set_arg("name", buffer);
+        DLOG(INFO) << "Clearing queue";
+        wq.put_work(dummy_req);
+    }
+    repeat = false;
   }else{
     wq.put_work(req);
   }
